@@ -1,0 +1,231 @@
+ *		STM32F446XX Memory Organization
+ *	. Internal Flash Memory (aka Embedded Flash memory) of 512kB
+ *	. Internal SRAM1 of 112kB
+ *	. Internal SRAM2 of 16kB
+ *	. System Memory (ROM) of 30kB
+ *	. OTP memory of 528 bytes
+ *	. Option bytes memory of 16bytes
+ *	. Backup RAM of 4kB
+ *
+ *	Internal Flash Memory:
+ *	512kB, 0x0800 0000 - 0x0807 FFFF
+ *	Used to store application code and read only data of the program, and vector table
+ *	Non volatile
+ *
+ *	Internal SRAM1:
+ *	112kB, 0x2000 0000 - 0x2001 BFFF
+ *	Used to store application global data, static variables, Stack and Heap purposes
+ *	Volatile
+ *	Can also execute code from this memory
+ *
+ *	Internal SRAM2:
+ *	16kB, 0x2001 C000 - 0x2001 FFFF
+ *	Used to store your application global data, static variables, Stack and Heap purposes
+ *	Volatile
+ *	Can also execute code from this memory
+ *
+ *	System Memory (ROM):
+ *	30kB, 0x1FFF 0000 - 0x1FFF 77FF
+ *	All of the ST MCUs store the Bootloader in this memory
+ *	Read-only memory
+ *	By default, the MCU will not execute any code from this memory but it can be configured to boot
+ *	or execute bootloader from this memory.
+ *
+ *						Flash Module Organization
+ *	Block			Name			Block base addresses				Size
+ *	Main Memory		Sector 0		0x0800 0000 - 0x0800 3FFF			16kB
+ *	    ...			Sector 1		0x0800 4000 - 0x0800 7FFF			16kB
+ *	    aka			Sector 2		0x0800 8000 - 0x0800 BFFF			16kB
+ *	    ...			Sector 3		0x0800 C000 - 0x0800 FFFF			16kB
+ *  	User Flash		Sector 4		0x0801 0000 - 0x0801 FFFF			64kB
+ *	    ...			Sector 5		0x0802 4000 - 0x0803 FFFF			128kB
+ *	   512kB		Sector 6		0x0804 8000 - 0x0805 FFFF			128kB
+ *	    ...			Sector 7		0x0806 C000 - 0x0807 FFFF			128kB
+ *  ------System Memory------				0x1FFF 0000 - 0x1FFF 77FF			30kB
+ *  --------OTP Area---------				0x1FFF 7800 - 0x1FFF 7A0F			528kB
+ *  ------Option Bytes-------				0x1FFF C000 - 0x1FFF C00F			16B
+ *
+ *
+ *
+ *  	Reset Sequences of a Microcontroller: Discussion
+ *  1. When you reset the MCU, the PC of the processor is loaded with the value 0x0000 0000
+ *  2. Then processor reads the value @ memory location 0x0000 0000 into MSP
+ *  	MSP = value@0x0000 0000
+ *  	MSP is a Main Stack pointer register
+ *  	That means, processor first initializes the stack pointer register
+ *  3. Processor reads the value @ memory location 0x0000 0004 into PC
+ *     	That value is the address of the reset handler.
+ *  4. PC jumps to the reset handler
+ *  5. A reset handler is just a C or assembly function written by you to carry out any initializations required.
+ *  6. From the reset handler, you call the main() function of the application
+ *
+ *	All ARM Cortex M Based MCUs right after reset:
+ *	1) Load value @ memory addr. 0x0000 0000 to MSP
+ *	2) Load value @ memory addr. 0x0000 0004 to PC (Value = Addr of the reset handler)
+ *
+ *	In STM32 MCU:
+ *	1) MSP value stored at 0x0800 0000
+ *	2) Vector table starts from 0x0800 0004
+ *	3) Address of the reset handler found at 0x0800 0004
+ *
+ *	So it makes sense that we would need to somehow link 0x0800 0000 to 0x0000 0000 with Memory Aliasing
+ *
+ *
+ *		Boot Configuration of STM32F446xx
+ *
+ *						Boot Modes
+ *	Boot Mode Sel. Pins			Boot Mode		Aliasing
+ *	Boot1 		  Boot0
+ *    x				0		Main Flash memory	Main Flash memory is selected as the boot area
+ *    0				1		System memory		System memory is selected as the boot area
+ *    1				1		Embedded SRAM		Embedded SRAM is selected as the boot area
+ *
+ * USART2 is used for VirtualCOM ST-LINK connection to STM32F446RE. It cannot be used for Boot Mode, use USART1 or USART3 or other supported communications listed in app notes.
+ * USART3_RX pin PC11, USART3_TX pin PC10
+ *
+ * 	Bootloader Transport:
+ * Bootloader <-> Virtual COM port (USART2) <-> To/From PC
+ * 			or
+ * Bootloader <-> Debug port (USART3) -> to PC
+ *
+ * Debug port can be used to print debug messages from Bootloader code. USB to UART converter is required to connect to PC (optional)
+ *
+ *  	Bootloader: Code Placement in Flash
+ * System Memory -- ROM (30kB) - ST Bootloader
+ * Main Memory -- Sector0 (16kB) & Sector1 (16kB) - Our Bootloader
+ * Sectors2-7 will be used for storing user application
+ *
+ *	Bootloader Supported Commands:
+ * Host Sends			Command Code	Bootloader Replies				Notes
+ * ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ * BL_GET_VER			0x51		Bootloader version number (1byte)		This command is used to read the bootloader version from MCU
+ * BL_GET_HELP			0x52		All supported Command codes (10bytes)		This command is used to know what are the supported commands of the bootloader
+ * BL_GET_CID			0x53		Chip identification number (2bytes)		This command is used to read the MCU chip identification number
+ * BL_GET_RDP_STATUS		0x54		Returns the FLASH Read Protection level (1byte)	This command is used to read the FLASH Read Protection level
+ * BL_GO_TO_ADDR		0x55		Success or Error Code (1byte)			This command is used to jump bootloader to specified address.
+ * BL_FLASH_ERASE		0x56		Success or Error Code (1byte)			This command is used to mass erase or sector erase of the user flash.
+ * BL_MEM_WRITE			0x57		Success or Error Code (1byte)			This command is used to write data in to different memories of the MCU
+ * BL_ENDIS_RW_PROTECT		0x58		Success or Error Code (1byte)			This command is used to enable or disable read/write protect on different sectors of the user flash. TODO: This is left as excercise for student
+ * BL_MEM_READ			0x59		Memory contents of length asked by the host	This command is used to read data from different memories of the microcontroller. TODO: This is left as exercise for the student
+ * BL_READ_SECTOR_STATUS	0x5A		All sector statuses (2Bytes)			This command is used to read all of the sector protection statuses.
+ * BL_OTP_READ			0x5B		OTP contents					This command is used to read the OTP contents. TODO: This is left as exercise for the student
+ *
+ * 	Host-Bootloader Communication
+ * Host -> Command Packet -> MCU (Bootloader)
+ * Host <- ACK/NACK + Length to follow (2bytes) <- MCU (Bootloader)
+ * Host <- Reply (of "length to follow" bytes) <- MCU (Bootloader)
+ *
+ *	Request Data Frame Formats:
+ * BL_GET_VER
+ * Length to follow (1Byte : = N-1 Bytes of Request Packet) + Command Code (1 Byte) + CRC (4 Bytes) = 6 Bytes Total (so, N=6)
+ *
+ * BL_GET_HELP
+ * Length to follow (1Byte : = N-1 Bytes of Request Packet) + Command Code (1 Byte) + CRC (4 Bytes) = 6 Bytes Total (so, N=6)
+ *
+ * BL_GET_CID
+ * Length to follow (1Byte : = N-1 Bytes of Request Packet) + Command Code (1 Byte) + CRC (4 Bytes) = 6 Bytes Total (so, N=6)
+ * 
+ * BL_GO_TO_ADDR
+ * Length to follow (1Byte : = N-1 Bytes) + Command Code (1Byte) + Memory Address (LE) (4Bytes) + CRC (4Bytes) = 10 Bytes Total (N=10)
+ *
+ * BL_FLASH_ERASE
+ * Length to follow (1Byte) + Command Code (1Byte) + Sector Number (1Byte) + Number of Sectors (1Byte) + CRC (4Bytes) = 8 Bytes Total (N=8)
+ *
+ * BL_MEM_WRITE
+ * Length to follow (1Byte) + Command Code (1Byte) + Base Memory Address (LE) (4Bytes) + Payload Length (X) (1Byte) + Payload (X Bytes) + CRC (4Bytes) = 11 + X Bytes Total (N=11+X)
+ *
+ * BL_MEM_READ
+ * Length to follow (1Byte) + Command Code (1Byte) + Base Memory Address (LE) (4Bytes) + Len (1Byte) + CRC (4Bytes) = 11 Bytes Total (N=11)
+ *
+ * BL_EN_R_W_PROTECT
+ * Length to follow (1Byte) + Command Code (1Byte) + Sector Details (1Byte) + Protection Mode (1Byte) + CRC (4Bytes) = 8 Bytes Total (N=8)
+ *
+ * BL_DIS_R_W_PROTECT
+ * Length to follow (1Byte) + Command Code (1Byte) + CRC (4Bytes) = 6 Bytes Total
+ *
+ * BL_READ_SECTOR_STATUS
+ * Length to follow (1Byte) + Command Code (1Byte) + CRC (4Bytes) = 6 Bytes Total
+ *
+ *
+ *   Option Bytes in memory are used to configure write-protection and other security levels (R,W,Erase) of memory sectors, amongst other things.
+ *   RDP (Read protection option byte) settings Bit 15:8 :
+ *	0xAA : Level 0, no protection
+ *	0xCC : Level 2, chip protection (debug and boot from RAM features disabled)
+ *	Others : Level 1, read protection of memories (debug features limited)
+ *	
+ *   If Level 2: (debug/chip protection disabled) by writing 0xCC to the RDP option byte is set, the following is true:
+ *   All protections provided by level 1 are active. Booting from RAM or system memory bootloader is no longer allowed.
+ *   JTAG, SWV, ETM, and boundary scan are disabled. User option bytes can no longer be changed. When booting from Flash memory,
+ *   accesses (read, erase and program) to Flash memory from user code are allowed.
+ *
+ *   Memory read protection Level 2 is an irreversible operation. When Level 2 is activated, the level of protection cannot be decreased to Level 0 or Level 1.
+ *   The JTAG port is permanently disabled when Level 2 is active (acting as a JTAG fuse).
+ *
+ *   Changing from RDP Level 1 to Level 0 will erase the whole flash memory (can make a command do that).
+
+0x080081DC User App Reset Handler  (Go to debug mode in keil, and search 0x08008000 in memory windor. You'll see 0x080081DD as the next word after address of MSP (also R12), so subtract 4 and you get 0x080081DC for address of Reset Handler)
+
+
+In order to change/modify FLASH contents, you have to "erase" first before programming a new value. In order to erase, you simply write 0xFF to the byte. You cannot directly change 0xAB to 0xCD; instead you have to do 0xAB -> 0xFF -> 0xCD.
+
+To erase a FLASH sector,
+1: Check that no flash memory operation is ongoing by checking the BSY bit in the FLASH_SR register.
+2: Set the SER bit and select the sector out of the 7 sectors in the main memory block you wish to erase (SNB) in the FLASH_CR register.
+3: Set the STRT bit in the FLASH_CR register
+4: Wait for the BSY bit to be cleared
+
+To Mass Erase:
+1: Check that no Flash memory operation is ongoing by checking the BSY bit in the FLASH_SR register
+2: Set the MER bit in the FLASH_CR register
+3: Set the STRT bit in the FLASH_CR register
+4: Wait for the BSY bit to be cleared
+Note: If MER and SER bits are both set in the FLASH_CR register, mass erase is performed. If both MER and SER bits are reset and the STRT bit is set, an unpredictable behavior may occur without generating any error flag. This condition should be forbidden.
+
+Standard Programming:
+1: Check that no main Flash memory operation is ongoing by checking the BSY bit in the FLASH_SR register
+2: Set the PG bit in the FLASH_CR register
+3: Perform the data write operation(s) to the desired memory address (inside main memory block or OTP area)
+	- Byte access in case of x8 parallelism
+	- Half-word access in case of x16 parallelism
+	- Word access in case of x32 parallelism
+	- Double word access in case of x64 parallelism
+4: Wait for the BSY bit to be cleared
+Note: Successive write operations are possible without the need of an erase operation when changing bits from 1 to 0. Writing 1 requires a flash memory erase operation.
+	If an erase and a program operation are requested simultaneously, the erase operation is performed first.
+
+Unlocking the Flash control register:
+After reset, write is not allowed in the Flash control register (FLASH_CR) to protect the Flash memory against possible unwanted operations due, for example, to electric disturbances.
+The following sequence is used to unlock this register:
+1. Write KEY1 = 0x45670123 in the Flash key register (FLASH_KEYR)
+2. Write KEY2 = 0xCDEF89AB in the Flash key register (FLASH_KEYR)
+Any wrong sequence will return a bus error and lock up the FLASH_CR register until the next reset.
+The FLASH_CR register can be locked again by software by setting the LOCK bit in the FLASH_CR register.
+
+
+Bits 7:0 of nWRP (Flash memory write protection option bytes) for Sectors 0 to 7
+If SPRMOD is reset (default value), 0: Write protection active on sector i. 1: Write protection not active on sector i.
+If SPRMOD is set (active), 0: PCROP protection not active on sector i. 1: PCROP protection active on sector i.
+
+SPRMOD: Selection of Protection Mode of nWPRi bits
+0: nWPRi bits used for sector i write protection (Default)
+1: nWPRi bits used for sector i PCROP protection (Sector)
+
+PCROP : Proprietary code readout protection
+
+Programming User Option Bytes:
+To run any operation on this sector, the option lock bit (OPTLOCK) in the FLASH option control register (FLASH_OPTCR) must be cleared. Top be allowed to clear this bit, you have to perform the following sequence:
+1. Write OPTKEY1 = 0x08192A3B in the Flash option key register (FLASH_OPTKEYR)
+2. Write OPTKEY2 = 0x4C5D6E7F in the Flash option key register (FLASH_OPTKEYR)
+The user option bytes can be protected against unwanted erase/program operations by setting the OPTLOCK bit by software.
+
+Modifying User Option Bytes:
+To modify the user option value, follow the sequence below:
+1. Check that no Flash memory operation is ongoing by checking the BSY bit in the FLASH_SR register.
+2. Write the desired option value in the FLASH_OPTCR register.
+3. Set the option start bit (OPTSTRT) in the FLASH_OPTCR register.
+4. Wait for the BSY bit to be cleared.
+
+Note: The value of an option is automatically modified by first erasing the user configuration sector and then programming all the option bytes with the values contained in the FLASH_OPTCR register.
+
+Read Protection (RDP)
+
