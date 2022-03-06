@@ -4,11 +4,54 @@ Udemy (FastBit Embedded Brain Academy) "STM32Fx Microcontroller Custom Bootloade
 
 _Projects below are listed in alphabetical order (not in chronological order based on the Udemy Course):_
 
+
 - Nucleo-F446RE
+    
 	- Blinky
-	- HOST
+		- main.c
+		
+	- HOST   
+		- C
+			- STM32_Programmer_V1
+				- user_app.bin
+				- Sources
+					- BlCommands.c
+					- BlReplyProcessing.c
+					- fileops.c
+					- LinuxSerialPort.c
+					- main.c
+					- OSxSerialPort.c
+					- utilities.c
+					- WindowsSerialPort.c
+				- Headers
+					- LinuxSerialPort.h
+					- main.h
+					- OSxSerialPort.h
+					- WindowsSerialPort.h
+		- Python
+			- STM32_Programmer_V1.py
+			- user_app.bin
+			
 	- User_app_STM32F446xx
-	- bootloader_STM32F446xx
+		- Core
+			- Inc
+				- main.h
+				- stm32f4xx_hal_conf.h
+				- stm32f4xx_it.h
+			- Src
+				- main.c
+				- stm32f4xx_hal_msp.c
+				- stm32f4xx_it.c
+				- system_stm32f4xx.c
 
-
- 
+	- bootloader_STM32F446xx 
+		- Core
+			- Inc
+				- main.h
+				- stm32f4xx_hal_conf.h
+				- stm32f4xx_it.h
+			- Src
+				- main.c
+				- stm32f4xx_hal_msp.c
+				- stm32f4xx_it.c
+				- system_stm32f4xx.c
